@@ -1,4 +1,3 @@
-*__pycache__
 data/**
 !data/facescape/data_process.py
 !data/facescape/__init__.py
