@@ -1,25 +1,26 @@
 import json, sys, os, argparse
 os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
 
+import trimesh
+import numpy as np
+import cv2
+
 sys.path.append("../../utils")
 import renderer
 import io_util
 
 
-def _depth_map_from_shape(shape_filename, cam_params, depth_map_dir, write=False):
-    for i, param in enumerate(cam_params):
-        print(f'Rendering: {i + 1} / {len(cam_params)}')
-        K = param['K']
-        Rt = param['Rt']
-        h = param['height']
-        w = param['width']
-        depth_map, _ = renderer.render_cvcam(K, Rt, shape_filename, std_size=(h, w))
+def _depth_map_from_shape(shape_filename, image_idx, cam_param, depth_map_dir):
+    K = cam_param['K']
+    Rt = cam_param['Rt']
+    h = cam_param['height']
+    w = cam_param['width']
+    depth_map, _ = renderer.render_cvcam(K, Rt, shape_filename, std_size=(h, w))
 
-        # Write depth map to the provide path if needed.
-        if write:
-            if not os.path.exists(depth_map_dir):
-                os.makedirs(depth_map_dir)
-            io_util.write_pfm(os.path.join(depth_map_dir, f'{i}.pfm'), depth_map)
+    # Write depth map to the provide path if needed.
+    if not os.path.exists(depth_map_dir):
+        os.makedirs(depth_map_dir)
+    io_util.write_pfm(os.path.join(depth_map_dir, f'{image_idx}.pfm'), depth_map)
 
 
 def read_camera_params(camera_filename):
@@ -29,47 +30,121 @@ def read_camera_params(camera_filename):
     image_num = len(params) // 9  # get image number
     for i in range(image_num):
         images_param.append({
-            'K': params['%d_K' % i],
-            'Rt': params['%d_Rt' % i],
-            'distortion': params['%d_distortion' % i],
+            'K': np.array(params['%d_K' % i]),
+            'Rt': np.array(params['%d_Rt' % i]),
+            'distortion': np.array(params['%d_distortion' % i], dtype = np.float32),
             'height': params['%d_height' % i],
             'width': params['%d_width' % i],
             'valid': params['%d_valid' % i]})
     return images_param
 
 
-def generate_depth_map(shape_dir, camera_dir, depth_map_dir, write=False):
-    if write and depth_map_dir is None:
-        raise ValueError('Depth map directory should be provided if write is needed.')
+def write_camera_param(cam_param, depth_ranges, cam_dir, image_idx):
+    if not os.path.exists(cam_dir):
+        os.makedirs(cam_dir)
 
-    shapes_idx = os.listdir(camera_dir)
-    for idx in shapes_idx:
-        exps_name = os.listdir(f'{camera_dir}/{idx}/')
-        for exp_name in exps_name:
-            shape_filename = f'{shape_dir}/{idx}/{exp_name}.ply'
-            camera_filename = f'{camera_dir}/{idx}/{exp_name}/params.json'
-            depth_map_dir = f'{depth_map_dir}/{idx}/{exp_name}'
-            cam_param = read_camera_params(camera_filename)
+    cam_filename = os.path.join(cam_dir, f'{image_idx}.txt')
+    Rt = cam_param['Rt']
+    K = cam_param['K']
+    with open(cam_filename, 'w') as f:
+        f.write('extrinsic\n')
+        for j in range(3):
+            for k in range(4):
+                f.write(str(Rt[j][k]) + ' ')
+            f.write('\n')
+        f.write('\nintrinsic\n')
+        for j in range(3):
+            for k in range(3):
+                f.write(str(K[j][k]) + ' ')
+            f.write('\n')
+        f.write('\n%f %f %f %f\n' % (depth_ranges[0], depth_ranges[1], depth_ranges[2], depth_ranges[3]))
 
-            # Generate and write depth map from shape.
-            _depth_map_from_shape(shape_filename, cam_param, depth_map_dir, write=True)
+
+def compute_depth_range(cam_param, shape_mesh, depth_number=None, interval_scale=1.0):
+    Rt = cam_param['Rt'] + [[0.0, 0.0, 0.0, 1.0]]
+    K = cam_param['K']
+
+    zs = []
+    for vertex in shape_mesh.vertices:
+        transformed = np.matmul(Rt, [vertex[0], vertex[1], vertex[2], 1.0])
+        zs.append(transformed[2].item())
+    zs_sorted = sorted(zs)
+
+    # relaxed depth range
+    depth_min = zs_sorted[int(len(zs) * .01)]
+    depth_max = zs_sorted[int(len(zs) * .99)]
+
+    # Determine depth number using inverse depth setting. See MVSNet s.m.
+    if depth_number is None:
+        R = Rt[0:3, 0:3]
+        t = Rt[0:3, 3]
+        p1 = [K[0, 2], K[1, 2], 1]
+        p2 = [K[0, 2] + 1, K[1, 2], 1]
+        P1 = np.matmul(np.linalg.inv(K), p1) * depth_min
+        P1 = np.matmul(np.linalg.inv(R), (P1 - t))
+        P2 = np.matmul(np.linalg.inv(K), p2) * depth_min
+        P2 = np.matmul(np.linalg.inv(R), (P2 - t))
+        depth_num = (1 / depth_min - 1 / depth_max) / (1 / depth_min - 1 / (depth_min + np.linalg.norm(P2 - P1)))
+    else:
+        depth_num = depth_number
+    depth_interval = (depth_max - depth_min) / (depth_num - 1) / interval_scale
+
+    return [depth_min, depth_interval, depth_num, depth_max]
 
 
-def convert_to_mvs_data():
-    return
+def _undistort_images(raw_image_dir, undist_image_dir, image_idx, cam_param):
+    if not os.path.exists(undist_image_dir):
+        os.makedirs(undist_image_dir)
 
+    K = cam_param['K']
+    distort = cam_param['distortion']
+
+    filename = f'{image_idx}.jpg'
+    raw_img_filename = os.path.join(raw_image_dir, filename)
+    undist_img_filename = os.path.join(undist_image_dir, filename)
+    raw_image = cv2.imread(raw_img_filename)
+    undist_img = cv2.undistort(raw_image, K, distort)
+    cv2.imwrite(undist_img_filename, undist_img)
+    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert facescape to mvs data')
     parser.add_argument('--gen_depth', default=False, help='Whether or not to generate depth map.')
+    parser.add_argument('--gen_cam', default=False, help='Whether or not to generate camera file.')
+    parser.add_argument('--undist', default=False, help='Whether or not to undistort images.')
     args = parser.parse_args()
 
     curr_path = os.getcwd()
     shape_dir = os.path.join(curr_path, 'shapes')
-    images_dir = os.path.join(curr_path, 'images')
-    depth_map_dir = os.path.join(curr_path, 'depth_map')
+    raw_images_dir = os.path.join(curr_path, 'raw_images')
 
-    if args.gen_depth:
-        generate_depth_map(shape_dir, images_dir, depth_map_dir)
+    shapes_idx = os.listdir(raw_images_dir)
+    for idx in shapes_idx:
+        exps_name = os.listdir(f'{raw_images_dir}/{idx}/')
+        for exp_name in exps_name:
+            shape_filename = os.path.join(shape_dir, idx, f'{exp_name}.ply')
+            shape_mesh = trimesh.load(shape_filename)
 
+            raw_exp_images_dir = os.path.join(raw_images_dir, idx, exp_name)
+            camera_filename = os.path.join(raw_exp_images_dir, 'params.json')
+            cam_params = read_camera_params(camera_filename)
+
+            for image_idx, cam_param in enumerate(cam_params):
+                print(f'Processing {image_idx + 1} / {len(cam_params)}')
+
+                # Undistort images given camera parameters.
+                if args.undist:
+                    undist_exp_image_dir = os.path.join(curr_path, 'images', idx, exp_name)
+                    _undistort_images(raw_exp_images_dir, undist_exp_image_dir, image_idx, cam_param)
+
+                # Generate and write depth map from shape.
+                if args.gen_depth:
+                    depth_map_dir = os.path.join(curr_path, 'depth_map', idx, exp_name)
+                    _depth_map_from_shape(shape_filename, image_idx, cam_param, depth_map_dir)
+
+                # Convert camera parameters for MVS.
+                if args.gen_cam:
+                    depth_ranges = compute_depth_range(cam_param, shape_mesh)
+                    mvs_cam_dir = os.path.join(curr_path, 'cameras', idx, exp_name)
+                    write_camera_param(cam_param, depth_ranges, mvs_cam_dir, image_idx)
     
