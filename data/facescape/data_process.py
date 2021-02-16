@@ -140,20 +140,62 @@ def _create_view_pair(data_dir, view_pairs_dir, exp_name):
         os.makedirs(view_pairs_dir)
 
     view_pairs_filename = os.path.join(view_pairs_dir, f'{exp_name}.json')
-    print(view_pairs_filename)
     with open(view_pairs_filename, 'w') as f:
         json.dump(view_pairs, f)
 
 
+def _create_train_data(data_root, src_count):
+    train_data = []
+    images_dir = os.path.join(data_root, 'images')
+    cam_dir = os.path.join(data_root, 'cameras')
+    view_pair_dir = os.path.join(data_root, 'view_pairs')
+    depth_map_dir = os.path.join(data_root, 'depth_map')
+    shapes_idx = os.listdir(images_dir)
+    for shape_idx in shapes_idx:
+        exp_names = os.listdir(os.path.join(images_dir, shape_idx))
+        for exp_name in exp_names:
+            # Load view pairs file.
+            view_pair_filename = os.path.join(view_pair_dir, shape_idx, f'{exp_name}.json')
+            with open(view_pair_filename, 'r') as f:
+                pairs = json.load(f) 
+            images = os.listdir(os.path.join(images_dir, shape_idx, exp_name))
+
+            def image_filename(idx):
+                return os.path.join(images_dir, shape_idx, exp_name, f'{idx}.jpg')
+            def cam_filename(idx):
+                return os.path.join(cam_dir, shape_idx, exp_name, f'{idx}.txt')
+
+            for ref_idx in range(len(images)):
+                gt_depth_map = os.path.join(depth_map_dir, shape_idx, exp_name, f'{ref_idx}.pfm')
+                ref_image = image_filename(ref_idx)
+                ref_cam = cam_filename(ref_idx)
+                srcs_idx = pairs[ref_idx][:src_count]
+                sample = {
+                    'ref': ref_image, 
+                    'ref_cam': ref_cam, 
+                    'srcs': [image_filename(src_idx) for src_idx in srcs_idx],
+                    'srcs_cam': [cam_filename(src_idx) for src_idx in srcs_idx],
+                    'gt': gt_depth_map,
+                }
+                train_data.append(sample)
+
+    train_data_filename = os.path.join(data_root, 'train_data.json')
+    with open(train_data_filename, 'w') as f:
+        json.dump(train_data, f)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert facescape to mvs data')
+    parser.add_argument('--data_root', default=None, help='Root dir of Facescape data.')
     parser.add_argument('--gen_depth', default=False, help='Whether or not to generate depth map.')
     parser.add_argument('--gen_cam', default=False, help='Whether or not to generate camera file.')
     parser.add_argument('--undist', default=False, help='Whether or not to undistort images.')
     parser.add_argument('--gen_view_pair', default=False, help='Whether or not to image pairs.')
+    parser.add_argument('--gen_train_data', default=False, help='Whether or not to create train data file.')
+    parser.add_argument('--src_count', default=3, help='Number of source image.')
     args = parser.parse_args()
 
-    curr_path = os.getcwd()
+    curr_path = args.data_root if not args.data_root is None else os.getcwd()
     shape_dir = os.path.join(curr_path, 'shapes')
     raw_data_dir = os.path.join(curr_path, 'raw_data')
 
@@ -195,3 +237,6 @@ if __name__ == '__main__':
                         depth_ranges = compute_depth_range(cam_param, shape_mesh)
                         mvs_cam_dir = os.path.join(curr_path, 'cameras', idx, exp_name)
                         write_camera_param(cam_param, depth_ranges, mvs_cam_dir, image_idx)
+
+    if args.gen_train_data:
+        _create_train_data(curr_path, args.src_count)

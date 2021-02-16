@@ -1,4 +1,5 @@
 data/**
+!data/colmap_to_view_pair.py
 !data/facescape/data_process.py
 !data/facescape/__init__.py
 
