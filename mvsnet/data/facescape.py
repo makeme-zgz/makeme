@@ -41,12 +41,10 @@ class Facescape(data.Dataset):
         light_idx = i // self.num_view % self.num_light if self.fix_light is None else self.fix_light#3#
         scan_idx = i // self.num_view // self.num_light#int(os.environ['SCAN']) #2#
         ref = self.data_list[scan_idx][light_idx][ref_idx]
-        scan = int(ref[0].split('/')[1][4:])
         srcs = [self.data_list[scan_idx][light_idx][source_idx] for source_idx in src_idxs]
-        masks = [f'occlusion2/scan{scan}/{ref_idx}_{src_idx}.png' for src_idx in src_idxs]
         skip = 0
 
-        filenames = {'ref':ref[0], 'ref_cam':ref[1], 'srcs':[srcs[i][0] for i in range(self.num_src)], 'srcs_cam':[srcs[i][1] for i in range(self.num_src)], 'gt':ref[2], 'masks':masks}
+        filenames = {'ref':ref[0], 'ref_cam':ref[1], 'srcs':[srcs[i][0] for i in range(self.num_src)], 'srcs_cam':[srcs[i][1] for i in range(self.num_src)], 'gt':ref[2]}
         recursive_apply(filenames, lambda fn: os.path.join(self.root, fn))
         filenames['skip'] = skip
 

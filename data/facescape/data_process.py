@@ -105,46 +105,93 @@ def _undistort_images(raw_image_dir, undist_image_dir, image_idx, cam_param):
     raw_image = cv2.imread(raw_img_filename)
     undist_img = cv2.undistort(raw_image, K, distort)
     cv2.imwrite(undist_img_filename, undist_img)
+
+
+def _create_view_pair(data_dir, view_pairs_dir, exp_name):
+    # SfM with sparse feature matching using COLMAP.
+    colmap_sparse_cmd = f"""
+        colmap automatic_reconstructor
+        --workspace_path {data_dir}
+        --image_path {data_dir}/images 
+        --sparse 1
+        --dense 0
+    """
+    colmap_sparse_cmd = ' '.join(colmap_sparse_cmd.strip().split())
+    os.system(colmap_sparse_cmd)
+
+    # Undistort SfM results.
+    colmap_undistort_cmd = f"""
+        colmap image_undistorter 
+        --image_path {data_dir}/images 
+        --input_path {data_dir}/sparse/0 
+        --output_path {data_dir}/dense 
+        --output_type COLMAP 
+        --max_image_size 2000
+    """
+    colmap_undistort_cmd = ' '.join(colmap_undistort_cmd.strip().split())
+    os.system(colmap_undistort_cmd)
+
+    # Compute view pairs using the SfM results.
+    sys.path.append("../")
+    from colmap_to_view_pair import compute_view_pair
+    view_pairs = compute_view_pair(os.path.join(data_dir, 'dense'))
     
+    if not os.path.exists(view_pairs_dir):
+        os.makedirs(view_pairs_dir)
+
+    view_pairs_filename = os.path.join(view_pairs_dir, f'{exp_name}.json')
+    print(view_pairs_filename)
+    with open(view_pairs_filename, 'w') as f:
+        json.dump(view_pairs, f)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert facescape to mvs data')
     parser.add_argument('--gen_depth', default=False, help='Whether or not to generate depth map.')
     parser.add_argument('--gen_cam', default=False, help='Whether or not to generate camera file.')
     parser.add_argument('--undist', default=False, help='Whether or not to undistort images.')
+    parser.add_argument('--gen_view_pair', default=False, help='Whether or not to image pairs.')
     args = parser.parse_args()
 
     curr_path = os.getcwd()
     shape_dir = os.path.join(curr_path, 'shapes')
-    raw_images_dir = os.path.join(curr_path, 'raw_images')
+    raw_data_dir = os.path.join(curr_path, 'raw_data')
 
-    shapes_idx = os.listdir(raw_images_dir)
+    shapes_idx = os.listdir(raw_data_dir)
     for idx in shapes_idx:
-        exps_name = os.listdir(f'{raw_images_dir}/{idx}/')
+        exps_name = os.listdir(f'{raw_data_dir}/{idx}/')
         for exp_name in exps_name:
             shape_filename = os.path.join(shape_dir, idx, f'{exp_name}.ply')
             shape_mesh = trimesh.load(shape_filename)
 
-            raw_exp_images_dir = os.path.join(raw_images_dir, idx, exp_name)
-            camera_filename = os.path.join(raw_exp_images_dir, 'params.json')
-            cam_params = read_camera_params(camera_filename)
+            # Create view pair map. 
+            raw_exp_data_dir = os.path.join(raw_data_dir, idx, exp_name)
+            if args.gen_view_pair:
+                print(f'Creating view pairs for {idx} / {exp_name}')
+                view_pair_dir = os.path.join(curr_path, 'view_pairs', idx)
+                _create_view_pair(raw_exp_data_dir, view_pair_dir, exp_name)
 
-            for image_idx, cam_param in enumerate(cam_params):
-                print(f'Processing {image_idx + 1} / {len(cam_params)}')
+            if args.undist or args.gen_depth or args.gen_cam:
+                cam_params = read_camera_params(os.path.join(raw_exp_data_dir, 'params.json'))
+                for image_idx, cam_param in enumerate(cam_params):
+                    print(f'Processing {image_idx + 1} / {len(cam_params)}')
 
-                # Undistort images given camera parameters.
-                if args.undist:
-                    undist_exp_image_dir = os.path.join(curr_path, 'images', idx, exp_name)
-                    _undistort_images(raw_exp_images_dir, undist_exp_image_dir, image_idx, cam_param)
+                    # Undistort images given camera parameters.
+                    if args.undist:
+                        undist_exp_image_dir = os.path.join(curr_path, 'images', idx, exp_name)
+                        _undistort_images(
+                            os.path.join(raw_exp_data_dir, 'images'), 
+                            undist_exp_image_dir, 
+                            image_idx, 
+                            cam_param)
 
-                # Generate and write depth map from shape.
-                if args.gen_depth:
-                    depth_map_dir = os.path.join(curr_path, 'depth_map', idx, exp_name)
-                    _depth_map_from_shape(shape_filename, image_idx, cam_param, depth_map_dir)
+                    # Generate and write depth map from shape.
+                    if args.gen_depth:
+                        depth_map_dir = os.path.join(curr_path, 'depth_map', idx, exp_name)
+                        _depth_map_from_shape(shape_filename, image_idx, cam_param, depth_map_dir)
 
-                # Convert camera parameters for MVS.
-                if args.gen_cam:
-                    depth_ranges = compute_depth_range(cam_param, shape_mesh)
-                    mvs_cam_dir = os.path.join(curr_path, 'cameras', idx, exp_name)
-                    write_camera_param(cam_param, depth_ranges, mvs_cam_dir, image_idx)
-    
+                    # Convert camera parameters for MVS.
+                    if args.gen_cam:
+                        depth_ranges = compute_depth_range(cam_param, shape_mesh)
+                        mvs_cam_dir = os.path.join(curr_path, 'cameras', idx, exp_name)
+                        write_camera_param(cam_param, depth_ranges, mvs_cam_dir, image_idx)
