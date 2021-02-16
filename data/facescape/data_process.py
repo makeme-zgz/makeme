@@ -31,7 +31,7 @@ def read_camera_params(camera_filename):
     for i in range(image_num):
         images_param.append({
             'K': np.array(params['%d_K' % i]),
-            'Rt': np.array(params['%d_Rt' % i]),
+            'Rt': np.array(params['%d_Rt' % i] + [[0.0, 0.0, 0.0, 1.0]]),
             'distortion': np.array(params['%d_distortion' % i], dtype = np.float32),
             'height': params['%d_height' % i],
             'width': params['%d_width' % i],
@@ -48,7 +48,7 @@ def write_camera_param(cam_param, depth_ranges, cam_dir, image_idx):
     K = cam_param['K']
     with open(cam_filename, 'w') as f:
         f.write('extrinsic\n')
-        for j in range(3):
+        for j in range(4):
             for k in range(4):
                 f.write(str(Rt[j][k]) + ' ')
             f.write('\n')
@@ -61,7 +61,7 @@ def write_camera_param(cam_param, depth_ranges, cam_dir, image_idx):
 
 
 def compute_depth_range(cam_param, shape_mesh, depth_number=None, interval_scale=1.0):
-    Rt = cam_param['Rt'] + [[0.0, 0.0, 0.0, 1.0]]
+    Rt = cam_param['Rt']
     K = cam_param['K']
 
     zs = []

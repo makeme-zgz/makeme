@@ -83,7 +83,7 @@ if __name__ == '__main__':
     Loss = importlib.import_module(f'core.{args.model_name}').Loss
     get_train_loader = importlib.import_module(f'data.{args.dataset_name}').get_train_loader
 
-    dataset, loader = get_train_loader(
+    _, loader = get_train_loader(
         args.data_root, args.num_src, total_steps, args.batch_size,
         {
             'interval_scale': args.interval_scale,
