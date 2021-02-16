@@ -31,7 +31,7 @@ def read_camera_params(camera_filename):
     for i in range(image_num):
         images_param.append({
             'K': np.array(params['%d_K' % i]),
-            'Rt': np.array(params['%d_Rt' % i]),
+            'Rt': np.array(params['%d_Rt' % i] + [[0.0, 0.0, 0.0, 1.0]]),
             'distortion': np.array(params['%d_distortion' % i], dtype = np.float32),
             'height': params['%d_height' % i],
             'width': params['%d_width' % i],
@@ -48,7 +48,7 @@ def write_camera_param(cam_param, depth_ranges, cam_dir, image_idx):
     K = cam_param['K']
     with open(cam_filename, 'w') as f:
         f.write('extrinsic\n')
-        for j in range(3):
+        for j in range(4):
             for k in range(4):
                 f.write(str(Rt[j][k]) + ' ')
             f.write('\n')
@@ -61,7 +61,7 @@ def write_camera_param(cam_param, depth_ranges, cam_dir, image_idx):
 
 
 def compute_depth_range(cam_param, shape_mesh, depth_number=None, interval_scale=1.0):
-    Rt = cam_param['Rt'] + [[0.0, 0.0, 0.0, 1.0]]
+    Rt = cam_param['Rt']
     K = cam_param['K']
 
     zs = []
@@ -144,12 +144,10 @@ def _create_view_pair(data_dir, view_pairs_dir, exp_name):
         json.dump(view_pairs, f)
 
 
-def _create_train_data(data_root, src_count):
+def _create_train_data(data_root):
     train_data = []
     images_dir = os.path.join(data_root, 'images')
-    cam_dir = os.path.join(data_root, 'cameras')
     view_pair_dir = os.path.join(data_root, 'view_pairs')
-    depth_map_dir = os.path.join(data_root, 'depth_map')
     shapes_idx = os.listdir(images_dir)
     for shape_idx in shapes_idx:
         exp_names = os.listdir(os.path.join(images_dir, shape_idx))
@@ -161,15 +159,15 @@ def _create_train_data(data_root, src_count):
             images = os.listdir(os.path.join(images_dir, shape_idx, exp_name))
 
             def image_filename(idx):
-                return os.path.join(images_dir, shape_idx, exp_name, f'{idx}.jpg')
+                return os.path.join('images', shape_idx, exp_name, f'{idx}.jpg')
             def cam_filename(idx):
-                return os.path.join(cam_dir, shape_idx, exp_name, f'{idx}.txt')
+                return os.path.join('cameras', shape_idx, exp_name, f'{idx}.txt')
 
             for ref_idx in range(len(images)):
-                gt_depth_map = os.path.join(depth_map_dir, shape_idx, exp_name, f'{ref_idx}.pfm')
+                gt_depth_map = os.path.join('depth_map', shape_idx, exp_name, f'{ref_idx}.pfm')
                 ref_image = image_filename(ref_idx)
                 ref_cam = cam_filename(ref_idx)
-                srcs_idx = pairs[ref_idx][:src_count]
+                srcs_idx = pairs[ref_idx]
                 sample = {
                     'ref': ref_image, 
                     'ref_cam': ref_cam, 
@@ -192,7 +190,6 @@ if __name__ == '__main__':
     parser.add_argument('--undist', default=False, help='Whether or not to undistort images.')
     parser.add_argument('--gen_view_pair', default=False, help='Whether or not to image pairs.')
     parser.add_argument('--gen_train_data', default=False, help='Whether or not to create train data file.')
-    parser.add_argument('--src_count', default=3, help='Number of source image.')
     args = parser.parse_args()
 
     curr_path = args.data_root if not args.data_root is None else os.getcwd()
@@ -239,4 +236,4 @@ if __name__ == '__main__':
                         write_camera_param(cam_param, depth_ranges, mvs_cam_dir, image_idx)
 
     if args.gen_train_data:
-        _create_train_data(curr_path, args.src_count)
+        _create_train_data(curr_path)

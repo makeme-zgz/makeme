@@ -24,7 +24,7 @@ def load_pair(file: str):
     return pairs
 
 
-def load_cam(file: str, max_d, interval_scale=1):
+def load_cam(file: str, max_d=256, interval_scale=1):
     """ read camera txt file """
     cam = np.zeros((2, 4, 4))
     with open(file) as f:

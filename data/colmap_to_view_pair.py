@@ -300,7 +300,7 @@ def _calc_score(pair, images, points3d, extrinsic, image_ext, theta0, sigma1, si
     return image_name_i, image_name_j, score
 
 
-def compute_view_pair(colmap_dir, model_ext='.bin', image_ext='.jpg', theta0=5, sigma1=1, sigma2=10):
+def compute_view_pair(colmap_dir, model_ext='.bin', image_ext='.jpg', theta0=5, sigma1=1, sigma2=10, max_src_count=9):
     model_dir = os.path.join(colmap_dir, 'sparse')
     _, images, points3d = read_model(model_dir, model_ext)
 
@@ -339,5 +339,5 @@ def compute_view_pair(colmap_dir, model_ext='.bin', image_ext='.jpg', theta0=5, 
     view_sel = []
     for i in range(len(images)):
         sorted_score_idx = np.argsort(score[i])[::-1]
-        view_sel.append(sorted_score_idx[:6].tolist())
+        view_sel.append(sorted_score_idx[:max_src_count].tolist())
     return view_sel
