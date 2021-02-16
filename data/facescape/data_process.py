@@ -140,9 +140,22 @@ def _create_view_pair(data_dir, view_pairs_dir, exp_name):
         os.makedirs(view_pairs_dir)
 
     view_pairs_filename = os.path.join(view_pairs_dir, f'{exp_name}.json')
-    print(view_pairs_filename)
     with open(view_pairs_filename, 'w') as f:
         json.dump(view_pairs, f)
+
+
+# def create_train_data():
+#     data = []
+#     images_dir = os.path.join(os.getcwd(), 'images')
+#     shapes_idx = os.listdir(images_dir)
+#     for shape_idx in shapes_idx:
+#         exp_names = os.listdir(os.path.join(images_dir, shape_idx))
+#         for exp_name in exp_names:
+#             images_filename = os.listdir(os.path.join(images_dir, shape_idx, exp_name))
+#             for image in images_filename:
+                
+
+
 
 
 if __name__ == '__main__':
