@@ -444,7 +444,8 @@ class Loss(nn.Module):  # TODO
 
         depth_start = ref_cam[:, 1:2, 3:4, 0:1]  # n111
         depth_interval = ref_cam[:, 1:2, 3:4, 1:2]  # n111
-        depth_end = depth_start + (max_d - 2) * depth_interval  # strict range
+        depth_number = ref_cam[:, 1:2, 3:4, 2:3]  # n111
+        depth_end = depth_start + (depth_number - 2) * depth_interval  # strict range
         masks = [masks[:, i, ...] for i in range(masks.size()[1])]
 
         stage_losses = []

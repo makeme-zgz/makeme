@@ -8,12 +8,10 @@ import cv2
 import numpy as np
 import torch.utils.data as data
 
-sys.path.append("../utils")
-from preproc import image_net_center as center_image, to_channel_first, resize, center_crop, recursive_apply
-from io_utils import load_cam, load_pfm
+from utils.preproc import image_net_center as center_image, to_channel_first, resize, center_crop, recursive_apply
+from utils.io_utils import load_cam, load_pfm
 
-sys.path.append("../data")
-from data_utils import dict_collate, Until
+from data.data_utils import dict_collate, Until
 
 
 class Facescape(data.Dataset):

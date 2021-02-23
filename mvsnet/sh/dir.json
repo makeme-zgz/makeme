@@ -2,12 +2,13 @@
     "local": {
         "bld_dir": "",
         "dtu_dir": "",
+        "facescape_dir": "/home/zgz/makeme/data/facescape",
         "tnt_dir": "",
         "tnt_training_dir": "",
-        "save_dir": "",
-        "batch_size": 2,
+        "save_dir": "/home/zgz/makeme/data/facescape/train",
+        "batch_size": 1,
         "num_workers": 4,
-        "train_environ": "",
+        "train_environ": "CUDA_VISIBLE_DEVICES=0",
         "val_environ": ""
     }
 }
