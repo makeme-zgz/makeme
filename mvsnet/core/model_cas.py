@@ -439,7 +439,7 @@ class Loss(nn.Module):  # TODO
     def __init__(self):
         super(Loss, self).__init__()
 
-    def forward(self, outputs, gt, masks, ref_cam, max_d, occ_guide=False, mode='soft'):  #MVS
+    def forward(self, outputs, gt, masks, ref_cam, occ_guide=False, mode='soft'):  #MVS
         outputs, refined_depth = outputs
 
         depth_start = ref_cam[:, 1:2, 3:4, 0:1]  # n111
