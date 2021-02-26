@@ -16,11 +16,10 @@ from data.data_utils import dict_collate, Until
 
 class Facescape(data.Dataset):
 
-    def __init__(self, root, train_data_filename, num_src, read, transforms):
+    def __init__(self, root, train_data_filename, read, transforms):
         self.root = root
         with open(os.path.join(root, train_data_filename)) as f:
             self.train_data = json.load(f)
-        self.num_src = num_src
         self.read = read
         self.transforms = transforms
 
@@ -37,10 +36,10 @@ class Facescape(data.Dataset):
         return sample
 
 
-def read(filenames):
+def read(filenames, num_src):
     ref_name, ref_cam_name, srcs_name, srcs_cam_name, gt_name = [filenames[attr] for attr in ['ref', 'ref_cam', 'srcs', 'srcs_cam', 'gt']]
-    ref, *srcs = [cv2.imread(fn) for fn in [ref_name] + srcs_name]
-    ref_cam, *srcs_cam = [load_cam(fn) for fn in [ref_cam_name] + srcs_cam_name]
+    ref, *srcs = [cv2.imread(fn) for fn in [ref_name] + srcs_name[:num_src]]
+    ref_cam, *srcs_cam = [load_cam(fn) for fn in [ref_cam_name] + srcs_cam_name[:num_src]]
     gt = np.expand_dims(load_pfm(gt_name), -1)
     masks = [(np.ones_like(gt)*255).astype(np.uint8) for _ in range(len(srcs))]
     return {
@@ -77,8 +76,8 @@ def train_preproc(sample, preproc_args):
 
 def get_train_loader(root, num_src, total_steps, batch_size, preproc_args, num_workers=0):
     dataset = Facescape(
-        root, 'train_data.json', num_src,
-        read=lambda filenames: read(filenames),
+        root, 'train_data.json',
+        read=lambda filenames, : read(filenames, num_src),
         transforms=[lambda sample: train_preproc(sample, preproc_args)]
     )
     loader = data.DataLoader(dataset, batch_size, collate_fn=dict_collate, shuffle=True, num_workers=num_workers, drop_last=True)

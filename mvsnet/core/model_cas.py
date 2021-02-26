@@ -315,6 +315,8 @@ class SingleStage(nn.Module):
 
         for src_feat, src_cam in zip(srcs_feat, srcs_cam):
             warped_src = self.build_cost_volume(ref_feat, ref_cam, src_feat, src_cam, depth_num, depth_start, depth_interval, s_scale, d_scale)
+            print(depth_num)
+            print(get_gpu_memory_map())
             cost_volume = groupwise_correlation(ref_ncdhw, warped_src, 8, 1)
             interm = self.reg(cost_volume)
             # if not self.training: del cost_volume
@@ -394,6 +396,28 @@ class SingleStage(nn.Module):
 
         return est_depth, prob_map, pair_results  #MVS
 
+import subprocess
+
+def get_gpu_memory_map():
+    """Get the current gpu usage.
+
+    Returns
+    -------
+    usage: dict
+        Keys are device ids as integers.
+        Values are memory usage as integers in MB.
+    """
+    result = subprocess.check_output(
+        [
+            'nvidia-smi', '--query-gpu=memory.used',
+            '--format=csv,nounits,noheader'
+        ], encoding='utf-8')
+    # Convert lines into a dictionary
+    gpu_memory = [int(x) for x in result.strip().split('\n')]
+    gpu_memory_map = dict(zip(range(len(gpu_memory)), gpu_memory))
+    return gpu_memory_map
+
+
 
 class Model(nn.Module):
 
@@ -407,7 +431,6 @@ class Model(nn.Module):
     
     def forward(self, sample, depth_nums, interval_scales, upsample=False, mem=False, mode='soft'):
         ref, ref_cam, srcs, srcs_cam = [sample[attr] for attr in ['ref', 'ref_cam', 'srcs', 'srcs_cam']]
-        depth_start = ref_cam[:, 1:2, 3:4, 0:1]  # n111
         depth_interval = ref_cam[:, 1:2, 3:4, 1:2]  # n111
         srcs_cam = [srcs_cam[:, i, ...] for i in range(srcs_cam.size()[1])]
 
