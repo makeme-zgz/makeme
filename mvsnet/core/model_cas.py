@@ -180,119 +180,11 @@ class SingleStage(nn.Module):
         warped_src = warped_src_nd_c_h_w.view(-1, depth_num//d_scale, *src.size()[1:]).transpose(1, 2)  # ncdhw
         return warped_src
 
-    def build_cost_maps(self, ref, ref_cam, source, source_cam, depth_num, depth_start, depth_interval, scale):
-        ref_cam_scaled, source_cam_scaled = [scale_camera(cam, 1 / scale) for cam in [ref_cam, source_cam]]
-        Hs = get_homographies(ref_cam_scaled, source_cam_scaled, depth_num, depth_start, depth_interval)
-
-        cost_maps = []
-        for d in range(depth_num):
-            H = Hs[:, d, ...]
-            warped_source = homography_warping(source, H)
-            cost_maps.append(torch.cat([ref, warped_source], dim=1))
-        return cost_maps
-
-    def forward_mem(self, sample, depth_num, upsample=False, mode='soft'):  # obsolete
-        ref, ref_cam, srcs, srcs_cam = sample
-        depth_start = ref_cam[:, 1:2, 3:4, 0:1]  # n111
-        depth_interval = ref_cam[:, 1:2, 3:4, 1:2]  # n111
-        srcs = [srcs[:, i, ...] for i in range(srcs.size()[1])]
-        srcs_cam = [srcs_cam[:, i, ...] for i in range(srcs_cam.size()[1])]
-
-        s_scale = 4
-        upsample_scale = 2
-        d_scale = 1
-        interm_scale = 2
-
-        ref_feat = self.feat_ext(ref)
-        ref_ncdhw = ref_feat.unsqueeze(2).repeat(1, 1, depth_num // d_scale, 1, 1)
-
-        pair_results = []
-
-        if mode == 'soft':
-            weight_sum = torch.zeros((ref_ncdhw.size()[0], 1, 1, ref_ncdhw.size()[3]//interm_scale, ref_ncdhw.size()[4]//interm_scale)).to(ref_ncdhw.dtype).cuda()
-        if mode == 'hard':
-            weight_sum = torch.zeros((ref_ncdhw.size()[0], 1, 1, ref_ncdhw.size()[3]//interm_scale, ref_ncdhw.size()[4]//interm_scale)).to(ref_ncdhw.dtype).cuda()
-        if mode == 'average':
-            pass
-        if mode == 'uwta':
-            min_weight = None
-        if mode == 'maxpool':
-            init = True
-
-        fused_interm = torch.zeros((ref_ncdhw.size()[0], 16, ref_ncdhw.size()[2]//interm_scale, ref_ncdhw.size()[3]//interm_scale, ref_ncdhw.size()[4]//interm_scale)).to(ref_ncdhw.dtype).cuda()
-        for src, src_cam in zip(srcs, srcs_cam):
-            src_feat = self.feat_ext(src)
-            warped_src = self.build_cost_volume(ref_feat, ref_cam, src_feat, src_cam, depth_num, depth_start, depth_interval, s_scale, d_scale)
-            cost_volume = groupwise_correlation(ref_ncdhw, warped_src, 8, 1)
-            interm = self.reg(cost_volume)
-            score_volume = self.reg_pair(interm)  # n1dhw
-            if d_scale != 1: score_volume = F.interpolate(score_volume, scale_factor=(d_scale, 1, 1), mode='trilinear', align_corners=False)
-            score_volume = score_volume.squeeze(1)  # ndhw
-            prob_volume, est_depth_class = soft_argmin(score_volume, dim=1, keepdim=True)
-            est_depth = est_depth_class * depth_interval * interm_scale + depth_start
-            entropy_ = entropy(prob_volume, dim=1, keepdim=True)
-            heads = self.uncert_net(entropy_)
-            pair_results.append([est_depth, heads])
-
-            if mode == 'soft':
-                weight = (-heads[0]).exp().unsqueeze(2)
-                weight_sum += weight
-                fused_interm += interm * weight
-            if mode == 'hard':
-                weight = (heads[0]<0).to(interm.dtype).unsqueeze(2) + 1e-4
-                weight_sum += weight
-                fused_interm += interm * weight
-            if mode == 'average':
-                weight = None
-                fused_interm += interm
-            if mode == 'uwta':
-                weight = heads[0].unsqueeze(2)
-                if min_weight is None:
-                    min_weight = weight
-                    mask = torch.ones_like(min_weight).to(interm.dtype).cuda()
-                else:
-                    mask = (weight<min_weight).to(interm.dtype)
-                    min_weight = weight * mask + min_weight * (1 - mask)
-                fused_interm = interm * mask + fused_interm * (1 - mask)
-            if mode == 'maxpool':
-                weight = None
-                if init:
-                    fused_interm += interm
-                    init = False
-                else:
-                    fused_interm = torch.max(fused_interm, interm)
-
-            # if not self.training:
-            #     del weight, prob_volume, est_depth_class, score_volume, interm, cost_volume, warped_src, src_feat
-
-        if mode == 'soft':
-            fused_interm /= weight_sum
-        if mode == 'hard':
-            fused_interm /= weight_sum
-        if mode == 'average':
-            fused_interm /= len(srcs)
-        if mode == 'uwta':
-            pass
-        if mode == 'maxpool':
-            pass
-
-        score_volume = self.reg_fuse(fused_interm)  # n1dhw
-        if d_scale != 1: score_volume = F.interpolate(score_volume, scale_factor=(d_scale, 1, 1), mode='trilinear', align_corners=False)
-        score_volume = score_volume.squeeze(1)  # ndhw
-        if upsample:
-            score_volume = F.interpolate(score_volume, scale_factor=upsample_scale, mode='bilinear', align_corners=False)
-        prob_volume, est_depth_class, prob_map = soft_argmin(score_volume, dim=1, keepdim=True, window=2)
-        est_depth = est_depth_class * depth_interval + depth_start
-
-        return est_depth, prob_map, pair_results
-
-    def forward(self, sample, depth_num, upsample=False, mem=False, mode='soft', depth_start_override=None, depth_interval_override=None, s_scale=1):
+    def forward(self, sample, depth_start, depth_num, depth_interval, upsample=False, mem=False, mode='soft', s_scale=1):
         if mem:
             raise NotImplementedError
 
         ref_feat, ref_cam, srcs_feat, srcs_cam = sample
-        depth_start = ref_cam[:, 1:2, 3:4, 0:1] if depth_start_override is None else depth_start_override  # n111 or n1hw
-        depth_interval = ref_cam[:, 1:2, 3:4, 1:2] if depth_interval_override is None else depth_interval_override  # n111
 
         upsample_scale = 1
         d_scale = 1
@@ -315,8 +207,6 @@ class SingleStage(nn.Module):
 
         for src_feat, src_cam in zip(srcs_feat, srcs_cam):
             warped_src = self.build_cost_volume(ref_feat, ref_cam, src_feat, src_cam, depth_num, depth_start, depth_interval, s_scale, d_scale)
-            print(depth_num)
-            print(get_gpu_memory_map())
             cost_volume = groupwise_correlation(ref_ncdhw, warped_src, 8, 1)
             interm = self.reg(cost_volume)
             # if not self.training: del cost_volume
@@ -396,28 +286,6 @@ class SingleStage(nn.Module):
 
         return est_depth, prob_map, pair_results  #MVS
 
-import subprocess
-
-def get_gpu_memory_map():
-    """Get the current gpu usage.
-
-    Returns
-    -------
-    usage: dict
-        Keys are device ids as integers.
-        Values are memory usage as integers in MB.
-    """
-    result = subprocess.check_output(
-        [
-            'nvidia-smi', '--query-gpu=memory.used',
-            '--format=csv,nounits,noheader'
-        ], encoding='utf-8')
-    # Convert lines into a dictionary
-    gpu_memory = [int(x) for x in result.strip().split('\n')]
-    gpu_memory_map = dict(zip(range(len(gpu_memory)), gpu_memory))
-    return gpu_memory_map
-
-
 
 class Model(nn.Module):
 
@@ -431,25 +299,69 @@ class Model(nn.Module):
     
     def forward(self, sample, depth_nums, interval_scales, upsample=False, mem=False, mode='soft'):
         ref, ref_cam, srcs, srcs_cam = [sample[attr] for attr in ['ref', 'ref_cam', 'srcs', 'srcs_cam']]
-        depth_interval = ref_cam[:, 1:2, 3:4, 1:2]  # n111
         srcs_cam = [srcs_cam[:, i, ...] for i in range(srcs_cam.size()[1])]
+
+        # Depth info
+        depth_start = ref_cam[:, 1:2, 3:4, 0:1]   # n111
+        depth_end = ref_cam[:, 1:2, 3:4, 3:4]
+        depth_interval = ref_cam[:, 1:2, 3:4, 1:2]  # n111
 
         n, v, c, h, w = srcs.size()
         img_pack = torch.cat([ref, srcs.transpose(0, 1).reshape(v*n, c, h, w)])
         feat_pack_1, feat_pack_2, feat_pack_3 = self.feat_ext(img_pack)
 
+        # Stage 1
         ref_feat_1, *srcs_feat_1 = [feat_pack_1[i*n:(i+1)*n] for i in range(v+1)]
-        est_depth_1, prob_map_1, pair_results_1 = self.stage1([ref_feat_1, ref_cam, srcs_feat_1, srcs_cam], depth_num=depth_nums[0], upsample=False, mem=mem, mode=mode, depth_start_override=None, depth_interval_override=depth_interval*interval_scales[0], s_scale=8)
+        depth_interval_1 = (depth_end - depth_start) / (depth_nums[0] - 1)
+        est_depth_1, prob_map_1, pair_results_1 = self.stage1(
+            [ref_feat_1, ref_cam, srcs_feat_1, srcs_cam], 
+            depth_start=depth_start, 
+            depth_num=depth_nums[0], 
+            depth_interval=depth_interval_1, 
+            upsample=False, 
+            mem=mem, 
+            mode=mode, 
+            s_scale=8)
         prob_map_1_up = F.interpolate(prob_map_1, scale_factor=4, mode='bilinear', align_corners=False)
 
+        # Stage 2
         ref_feat_2, *srcs_feat_2 = [feat_pack_2[i*n:(i+1)*n] for i in range(v+1)]
-        depth_start_2 = F.interpolate(est_depth_1.detach(), size=(ref_feat_2.size()[2], ref_feat_2.size()[3]), mode='bilinear', align_corners=False) - depth_nums[1] * depth_interval * interval_scales[1] / 2
-        est_depth_2, prob_map_2, pair_results_2 = self.stage2([ref_feat_2, ref_cam, srcs_feat_2, srcs_cam], depth_num=depth_nums[1], upsample=False, mem=mem, mode=mode, depth_start_override=depth_start_2, depth_interval_override=depth_interval*interval_scales[1], s_scale=4)
+        resized_depth_2 = F.interpolate(
+            est_depth_1.detach(),
+            size=(ref_feat_2.size()[2], ref_feat_2.size()[3]), 
+            mode='bilinear', 
+            align_corners=False)
+        depth_interval_2 = depth_interval * interval_scales[1]
+        depth_start_2 = resized_depth_2 - depth_nums[1] * depth_interval_2 / 2
+        est_depth_2, prob_map_2, pair_results_2 = self.stage2(
+            [ref_feat_2, ref_cam, srcs_feat_2, srcs_cam],
+            depth_start=depth_start_2,  
+            depth_num=depth_nums[1], 
+            depth_interval=depth_interval_2, 
+            psample=False, 
+            mem=mem,
+            mode=mode, 
+            s_scale=4)
         prob_map_2_up = F.interpolate(prob_map_2, scale_factor=2, mode='bilinear', align_corners=False)
 
+        # Stage 3
         ref_feat_3, *srcs_feat_3 = [feat_pack_3[i*n:(i+1)*n] for i in range(v+1)]
-        depth_start_3 = F.interpolate(est_depth_2.detach(), size=(ref_feat_3.size()[2], ref_feat_3.size()[3]), mode='bilinear', align_corners=False) - depth_nums[2] * depth_interval * interval_scales[2] / 2
-        est_depth_3, prob_map_3, pair_results_3 = self.stage3([ref_feat_3, ref_cam, srcs_feat_3, srcs_cam], depth_num=depth_nums[2], upsample=upsample, mem=mem, mode=mode, depth_start_override=depth_start_3, depth_interval_override=depth_interval*interval_scales[2], s_scale=2)
+        resized_depth_3 = F.interpolate(
+            est_depth_2.detach(), 
+            size=(ref_feat_3.size()[2], ref_feat_3.size()[3]), 
+            mode='bilinear', 
+            align_corners=False)
+        depth_interval_3 = depth_interval * interval_scales[2]
+        depth_start_3 = resized_depth_3 - depth_nums[2] * depth_interval_3 / 2
+        est_depth_3, prob_map_3, pair_results_3 = self.stage3(
+            [ref_feat_3, ref_cam, srcs_feat_3, srcs_cam], 
+            depth_start=depth_start_3, 
+            depth_num=depth_nums[2], 
+            depth_interval=depth_interval_3, 
+            upsample=upsample, 
+            mem=mem, 
+            mode=mode, 
+            s_scale=2)
 
         # refined_depth = self.refine(est_depth_3, ref_feat_3, ref_cam, srcs_feat_3, srcs_cam, 2)
         refined_depth = est_depth_3
