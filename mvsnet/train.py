@@ -140,7 +140,6 @@ if __name__ == '__main__':
     pbar = tqdm.tqdm(loader, dynamic_ncols=True)
     if global_step != 0: pbar.update(global_step)
     for sample in pbar:
-        print('training sample')
         if global_step >= total_steps: break
         if sample.get('skip') is not None and np.any(sample['skip']): continue
 
