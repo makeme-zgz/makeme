@@ -1,27 +1,0 @@
-  0%|          | 0/160000 [00:00<?, ?it/s]Number of model parameters: 1162696
-  0%|          | 0/160000 [00:05<?, ?it/s]
-Traceback (most recent call last):
-  File "train.py", line 153, in <module>
-    outputs, refined_depth, prob_maps = model(sample, cas_depth_num, cas_interv_scale, mode=args.mode)
-  File "/home/zgz/anaconda3/envs/makeme/lib/python3.7/site-packages/torch/nn/modules/module.py", line 532, in __call__
-    result = self.forward(*input, **kwargs)
-  File "/home/zgz/anaconda3/envs/makeme/lib/python3.7/site-packages/torch/nn/parallel/data_parallel.py", line 150, in forward
-    return self.module(*inputs[0], **kwargs[0])
-  File "/home/zgz/anaconda3/envs/makeme/lib/python3.7/site-packages/torch/nn/modules/module.py", line 532, in __call__
-    result = self.forward(*input, **kwargs)
-  File "/home/zgz/makeme/mvsnet/core/model_cas.py", line 429, in forward
-    est_depth_3, prob_map_3, pair_results_3 = self.stage3([ref_feat_3, ref_cam, srcs_feat_3, srcs_cam], depth_num=depth_nums[2], upsample=upsample, mem=mem, mode=mode, depth_start_override=depth_start_3, depth_interval_override=depth_interval*interval_scales[2], s_scale=2)
-  File "/home/zgz/anaconda3/envs/makeme/lib/python3.7/site-packages/torch/nn/modules/module.py", line 532, in __call__
-    result = self.forward(*input, **kwargs)
-  File "/home/zgz/makeme/mvsnet/core/model_cas.py", line 317, in forward
-    warped_src = self.build_cost_volume(ref_feat, ref_cam, src_feat, src_cam, depth_num, depth_start, depth_interval, s_scale, d_scale)
-  File "/home/zgz/makeme/mvsnet/core/model_cas.py", line 179, in build_cost_volume
-    warped_src_nd_c_h_w = homography_warping(src_nd_c_h_w, Hs.view(-1, *Hs.size()[2:]))  # n*d chw
-  File "/home/zgz/makeme/mvsnet/core/homography.py", line 103, in homography_warping
-    warped = interpolate(input, warped_coord)
-  File "/home/zgz/makeme/mvsnet/core/homography.py", line 91, in interpolate
-    warped = torch.nn.functional.grid_sample(image, warped_coord, mode='bilinear', padding_mode='zeros', align_corners=False)
-  File "/home/zgz/anaconda3/envs/makeme/lib/python3.7/site-packages/torch/nn/functional.py", line 2711, in grid_sample
-    return torch.grid_sampler(input, grid, mode_enum, padding_mode_enum, align_corners)
-RuntimeError: CUDA out of memory. Tried to allocate 160.00 MiB (GPU 0; 15.75 GiB total capacity; 14.46 GiB already allocated; 58.88 MiB free; 14.63 GiB reserved in total by PyTorch)
-CUDA_VISIBLE_DEVICES=0 python train.py --num_workers 4 --data_root /home/zgz/makeme/data/facescape --dataset_name facescape --model_name model_cas --num_src 3 --cas_depth_num 64,32,16 --cas_interv_scale 4,2,1 --resize 640,512 --crop 640,512 --mode soft --num_samples 160000 --batch_size 1 --job_name temp --save_dir /home/zgz/makeme/data/facescape/train

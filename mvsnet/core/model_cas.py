@@ -398,7 +398,11 @@ class Loss(nn.Module):  # TODO
             valid = union_overlap if occ_guide else in_range
 
             same_size = est_depth.size()[2]==pair_results[0][0].size()[2] and est_depth.size()[3]==pair_results[0][0].size()[3]
-            gt_interm = F.interpolate(gt, size=(pair_results[0][0].size()[2], pair_results[0][0].size()[3]), mode='bilinear', align_corners=False) if not same_size else gt_downsized
+            gt_interm = F.interpolate(
+                gt, 
+                size=(pair_results[0][0].size()[2], pair_results[0][0].size()[3]), 
+                mode='bilinear', 
+                align_corners=False) if not same_size else gt_downsized
             masks_interm = [
                 F.interpolate(mask, size=(pair_results[0][0].size()[2], pair_results[0][0].size()[3]), mode='nearest')
                 for mask in masks
