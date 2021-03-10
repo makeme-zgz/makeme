@@ -20,7 +20,7 @@ cmd = f"""{d['train_environ']}
     --dataset_name facescape
     --model_name model_cas
     --num_src 3
-    --cas_depth_num 64,32,16
+    --cas_depth_num 32,16,8
     --cas_interv_scale 4,2,1
     --resize 640,512
     --crop 640,512

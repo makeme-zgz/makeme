@@ -203,17 +203,17 @@ if __name__ == '__main__':
         description='Convert facescape to mvs data')
     parser.add_argument('--data_root', default=None,
                         help='Root dir of Facescape data.')
-    parser.add_argument('--gen_depth', default=False,
+    parser.add_argument('--gen_depth', default=False, const=True, nargs='?',
                         help='Whether or not to generate depth map.')
-    parser.add_argument('--gen_cam', default=False,
+    parser.add_argument('--gen_cam', default=False, const=True, nargs='?',
                         help='Whether or not to generate camera file.')
-    parser.add_argument('--undist', default=False,
+    parser.add_argument('--undist', default=False, const=True, nargs='?',
                         help='Whether or not to undistort images.')
-    parser.add_argument('--gen_view_pair', default=False,
+    parser.add_argument('--gen_view_pair', default=False, const=True, nargs='?',
                         help='Whether or not to image pairs.')
     parser.add_argument('--gen_train_data', default=False, const=True, nargs='?',
                         help='Whether or not to create train data file.')
-    parser.add_argument('--reorg_raw_img_data', default=False,
+    parser.add_argument('--reorg_raw_img_data', default=False, const=True, nargs='?',
                         help='Whether or not to reorganize the raw image data.')
     parser.add_argument('--max_row', default=None, type=int,
                         help='Max training data row.')
@@ -252,15 +252,13 @@ if __name__ == '__main__':
                 _create_view_pair(raw_exp_data_dir, view_pair_dir, exp_name)
 
             if args.undist or args.gen_depth or args.gen_cam:
-                cam_params = read_camera_params(
-                    os.path.join(raw_exp_data_dir, 'params.json'))
+                cam_params = read_camera_params(os.path.join(raw_exp_data_dir, 'params.json'))
                 for image_idx, cam_param in enumerate(cam_params):
                     print(f'Processing {image_idx + 1} / {len(cam_params)}')
 
                     # Undistort images given camera parameters.
                     if args.undist:
-                        undist_exp_image_dir = os.path.join(
-                            curr_path, 'images', idx, exp_name)
+                        undist_exp_image_dir = os.path.join(curr_path, 'images', idx, exp_name)
                         _undistort_images(
                             os.path.join(raw_exp_data_dir, 'images'),
                             undist_exp_image_dir,
@@ -269,19 +267,14 @@ if __name__ == '__main__':
 
                     # Generate and write depth map from shape.
                     if args.gen_depth:
-                        depth_map_dir = os.path.join(
-                            curr_path, 'depth_map', idx, exp_name)
-                        _depth_map_from_shape(
-                            shape_filename, image_idx, cam_param, depth_map_dir)
+                        depth_map_dir = os.path.join(curr_path, 'depth_map', idx, exp_name)
+                        _depth_map_from_shape(shape_filename, image_idx, cam_param, depth_map_dir)
 
                     # Convert camera parameters for MVS.
                     if args.gen_cam:
-                        depth_ranges = compute_depth_range(
-                            cam_param, shape_mesh)
-                        mvs_cam_dir = os.path.join(
-                            curr_path, 'cameras', idx, exp_name)
-                        write_camera_param(
-                            cam_param, depth_ranges, mvs_cam_dir, image_idx)
+                        depth_ranges = compute_depth_range(cam_param, shape_mesh, depth_number=128.0)
+                        mvs_cam_dir = os.path.join(curr_path, 'cameras', idx, exp_name)
+                        write_camera_param(cam_param, depth_ranges, mvs_cam_dir, image_idx)
             break
 
     if args.gen_train_data:
