@@ -552,8 +552,9 @@ class Loss(nn.Module):
 
         # TODO(zgz): Can try include l1 loss with 2.0 weight.
         losses_weight = [0.5, 1.0, 2.0]
-        loss = [
+
+        loss = sum([
             loss * weight for stage_loss, weight in zip(stage_losses, losses_weight)
-        ]
+        ])
 
         return loss, pair_loss, less1, less3, l1, stats, abs_err_scaled, valid
