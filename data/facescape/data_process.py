@@ -1,13 +1,12 @@
+import argparse
+from utils import io_util
+from utils import renderer
+import cv2
+import numpy as np
+import trimesh
+import json
 import os
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
-
-import json
-import trimesh
-import numpy as np
-import cv2
-from utils import renderer
-from utils import io_util
-import argparse
 
 
 def _depth_map_from_shape(shape_filename, image_idx, cam_param, depth_map_dir):
@@ -119,6 +118,7 @@ def _create_view_pair(data_dir, view_pairs_dir, exp_name):
         --image_path {data_dir}/images
         --sparse 1
         --dense 0
+        --use_gpu 0
     """
     colmap_sparse_cmd = ' '.join(colmap_sparse_cmd.strip().split())
     print(f'Running SfM with Colmap cmd: {colmap_sparse_cmd}')
@@ -131,7 +131,6 @@ def _create_view_pair(data_dir, view_pairs_dir, exp_name):
         --input_path {data_dir}/sparse/0
         --output_path {data_dir}/dense
         --output_type COLMAP
-        --max_image_size 2000
     """
     colmap_undistort_cmd = ' '.join(colmap_undistort_cmd.strip().split())
     print(f'Undistorting SfM result from Colmap. CMD: {colmap_undistort_cmd}')
@@ -149,11 +148,17 @@ def _create_view_pair(data_dir, view_pairs_dir, exp_name):
         json.dump(view_pairs, f)
 
 
-def _create_train_data(data_root):
+def _create_train_data(data_root, max_count=None):
     train_data = []
     images_dir = os.path.join(data_root, 'images')
     view_pair_dir = os.path.join(data_root, 'view_pairs')
     shapes_idx = os.listdir(images_dir)
+
+    def save_train_data(root_dir, data):
+        train_data_filename = os.path.join(root_dir, 'train_data.json')
+        with open(train_data_filename, 'w') as f:
+            json.dump(data, f)
+
     for shape_idx in shapes_idx:
         exp_names = os.listdir(os.path.join(images_dir, shape_idx))
         for exp_name in exp_names:
@@ -171,6 +176,10 @@ def _create_train_data(data_root):
                 return os.path.join('cameras', shape_idx, exp_name, f'{idx}.txt')
 
             for ref_idx in range(len(images)):
+                if max_count is not None and max_count <= len(train_data):
+                    save_train_data(data_root, train_data)
+                    return
+
                 gt_depth_map = os.path.join(
                     'depth_map', shape_idx, exp_name, f'{ref_idx}.pfm')
                 ref_image = image_filename(ref_idx)
@@ -185,9 +194,8 @@ def _create_train_data(data_root):
                 }
                 train_data.append(sample)
 
-    train_data_filename = os.path.join(data_root, 'train_data.json')
-    with open(train_data_filename, 'w') as f:
-        json.dump(train_data, f)
+    if max_count is None:
+        save_train_data(data_root, train_data)
 
 
 if __name__ == '__main__':
@@ -203,10 +211,12 @@ if __name__ == '__main__':
                         help='Whether or not to undistort images.')
     parser.add_argument('--gen_view_pair', default=False,
                         help='Whether or not to image pairs.')
-    parser.add_argument('--gen_train_data', default=False,
+    parser.add_argument('--gen_train_data', default=False, const=True, nargs='?',
                         help='Whether or not to create train data file.')
     parser.add_argument('--reorg_raw_img_data', default=False,
                         help='Whether or not to reorganize the raw image data.')
+    parser.add_argument('--max_row', default=None, type=int,
+                        help='Max training data row.')
     args = parser.parse_args()
 
     curr_path = args.data_root if not args.data_root is None else os.getcwd()
@@ -272,6 +282,7 @@ if __name__ == '__main__':
                             curr_path, 'cameras', idx, exp_name)
                         write_camera_param(
                             cam_param, depth_ranges, mvs_cam_dir, image_idx)
+            break
 
     if args.gen_train_data:
-        _create_train_data(curr_path)
+        _create_train_data(curr_path, max_count=args.max_row)

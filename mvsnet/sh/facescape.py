@@ -11,7 +11,7 @@ with open('sh/dir.json') as f:
     d = json.load(f)
 d = d[args.machine]
 
-save_dir = "/home/zgz/makeme/data/facescape/train"
+save_dir = "/home/supergeorge/makeme/data/facescape/train"
 
 cmd = f"""{d['train_environ']}
     python train.py
