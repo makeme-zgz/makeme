@@ -27,7 +27,7 @@ cmd = f"""{d['train_environ']}
     --mode soft
     --num_samples 160000
     --batch_size {d['batch_size']}
-    --job_name temp
+    --job_name facescape
     --save_dir {save_dir}
 """
 
