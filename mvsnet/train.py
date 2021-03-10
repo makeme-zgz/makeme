@@ -33,7 +33,6 @@ parser.add_argument('--dataset_name', type=str, default='blended', help='The nam
 parser.add_argument('--model_name', type=str, default='model_cas', help='The name of the model. Should be identical to the model source file. e.g. model_cas refers to core/model_cas.py.')
 
 parser.add_argument('--num_src', type=int, default=3, help='The number of source views.')
-parser.add_argument('--max_d', type=int, default=128, help='The standard max depth number.')
 parser.add_argument('--interval_scale', type=float, default=1., help='The standard interval scale.')
 parser.add_argument('--cas_depth_num', type=str, default='32,16,8', help='The depth number for each stage.')
 parser.add_argument('--cas_interv_scale', type=str, default='4,2,1', help='The interval scale for each stage.')
@@ -87,7 +86,6 @@ if __name__ == '__main__':
         args.data_root, args.num_src, total_steps, args.batch_size,
         {
             'interval_scale': args.interval_scale,
-            'max_d': args.max_d,
             'resize_width': resize_width,
             'resize_height': resize_height,
             'crop_width': crop_width,
@@ -152,11 +150,9 @@ if __name__ == '__main__':
 
         loss, uncert_loss, less1, less3, l1, losses, outputs, refined_depth, prob_maps = None, None, None, None, None, None, None, None, None
         try:
-            # est_depth, prob_map, pair_results = model([ref, ref_cam, srcs, srcs_cam], args.max_d, mode=args.mode)
             outputs, refined_depth, prob_maps = model(sample, cas_depth_num, cas_interv_scale, mode=args.mode)
 
-            # losses = compute_loss([est_depth, pair_results], gt, masks, ref_cam, args.max_d, occ_guide=args.occ_guide, mode=args.mode)
-            losses = compute_loss([outputs, refined_depth], gt, masks, ref_cam, args.max_d, occ_guide=args.occ_guide, mode=args.mode)
+            losses = compute_loss([outputs, refined_depth], gt, masks, ref_cam, occ_guide=args.occ_guide, mode=args.mode)
             
             loss, uncert_loss, less1, less3, l1 = losses[:5]  #MVS
             # loss, less1, less3, l1 = losses[:4]

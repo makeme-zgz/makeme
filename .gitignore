@@ -3,4 +3,5 @@ data/**
 !data/facescape/data_process.py
 !data/facescape/__init__.py
 
+**/**log**
 **/__pycache__

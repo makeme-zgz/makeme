@@ -1,13 +1,14 @@
 {
     "local": {
-        "bld_dir": "",
+        "bld_dir": "/home/supergeorge/makeme/data/bld",
         "dtu_dir": "",
+        "facescape_dir": "/home/supergeorge/makeme/data/facescape",
         "tnt_dir": "",
         "tnt_training_dir": "",
-        "save_dir": "",
-        "batch_size": 2,
+        "save_dir": "/home/supergeorge/makeme/train",
+        "batch_size": 1,
         "num_workers": 4,
-        "train_environ": "",
+        "train_environ": "CUDA_VISIBLE_DEVICES=0",
         "val_environ": ""
     }
 }
