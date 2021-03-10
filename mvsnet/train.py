@@ -64,15 +64,6 @@ args = parser.parse_args()
 if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
 
-    # seed = 0
-    # torch.backends.cudnn.benchmark = False
-    # torch.backends.cudnn.deterministic = True
-    # torch.manual_seed(seed)
-    # np.random.seed(seed)
-    # random.seed(seed)
-    # torch.cuda.manual_seed(seed)
-    # torch.cuda.manual_seed_all(seed)
-
     total_steps = args.num_samples // args.batch_size
     [resize_width, resize_height], [crop_width, crop_height] = [[int(v) for v in arg_str.split(',')] for arg_str in [args.resize, args.crop]]
     cas_depth_num = [int(v) for v in args.cas_depth_num.split(',')]
@@ -139,6 +130,7 @@ if __name__ == '__main__':
 
     pbar = tqdm.tqdm(loader, dynamic_ncols=True)
     if global_step != 0: pbar.update(global_step)
+
     for sample in pbar:
         if global_step >= total_steps: break
         if sample.get('skip') is not None and np.any(sample['skip']): continue
@@ -148,15 +140,12 @@ if __name__ == '__main__':
         recursive_apply(sample, lambda x: torch.from_numpy(x).float().cuda())
         ref, ref_cam, srcs, srcs_cam, gt, masks = [sample[attr] for attr in ['ref', 'ref_cam', 'srcs', 'srcs_cam', 'gt', 'masks']]
 
-        loss, uncert_loss, less1, less3, l1, losses, outputs, refined_depth, prob_maps = None, None, None, None, None, None, None, None, None
+        loss, uncert_loss, less1, less3, l1, losses, outputs, refined_depth = None, None, None, None, None, None, None, None
         try:
-            outputs, refined_depth, prob_maps = model(sample, cas_depth_num, cas_interv_scale, mode=args.mode)
-
+            outputs, refined_depth, _ = model(sample, cas_depth_num, cas_interv_scale, mode=args.mode)
             losses = compute_loss([outputs, refined_depth], gt, masks, ref_cam, occ_guide=args.occ_guide, mode=args.mode)
-            
-            loss, uncert_loss, less1, less3, l1 = losses[:5]  #MVS
-            # loss, less1, less3, l1 = losses[:4]
 
+            loss = losses[0]
             if np.isnan(loss.item()):
                 raise NanError
 
@@ -164,17 +153,11 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
 
-            losses_np = [v.item() for v in losses[:5]]  #MVS
-            loss, uncert_loss, less1, less3, l1 = losses_np  #MVS
-            # loss, less1, less3, l1 = losses_np
-
             stats = losses[5]
             stats_np = [(l1.item(), less1.item(), less3.item()) for l1, less1, less3 in stats]
             stats_str = ''.join([f'({l1:.3f} {less1*100:.2f} {less3*100:.2f})' for l1, less1, less3 in stats_np])
 
-            pbar.set_description(f'{loss:.3f}{stats_str}{l1:.3f}')
-            # pbar.set_description(f'{loss:.4f} {less1:.3f} {less3:.3f} {l1:.4f}')  #MVS
-            # pbar.set_description(f'{less1:.3f} {less3:.3f} {l1:.4f}')
+            pbar.set_description(f'{loss:.3f}{stats_str}')
         except NanError:
             print(f'nan: {global_step}/{total_steps}')
             gc.collect()
@@ -189,7 +172,7 @@ if __name__ == '__main__':
             }, args.save_dir, args.job_name, global_step, args.max_keep)
 
         global_step += 1
-        del loss, uncert_loss, less1, less3, l1, losses, outputs, refined_depth, prob_maps
+        del loss, uncert_loss, less1, less3, l1, losses, outputs, refined_depth
 
     save_model({
         'global_step': global_step,
