@@ -10,7 +10,10 @@ from core.nn_utils import ListModule, UNet, multi_dims, CSPN, soft_argmin, entro
 from utils.preproc import scale_camera, recursive_apply
 from core.homography import get_pixel_grids, get_homographies, homography_warping, interpolate
 from utils.utils import NanError
+
+
 cpg = 8
+
 class FeatExt(nn.Module):
     def __init__(self):
         super(FeatExt, self).__init__()
@@ -88,6 +91,8 @@ class UncertNet(nn.Module):
         out += x
         outs = [conv(out) for conv in self.head_convs]
         return outs
+
+
 class GNRefine(nn.Module):
     def __init__(self):
         super(GNRefine, self).__init__()
@@ -149,6 +154,8 @@ class GNRefine(nn.Module):
         # plt.show()
         refined_d = init_d + delta
         return refined_d
+
+
 class SingleStage(nn.Module):
 
     def __init__(self):
