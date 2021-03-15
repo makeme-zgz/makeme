@@ -17,7 +17,7 @@ class Pipeline(torch.nn.Module):
 
         self.config = config
 
-        self._extractor = Extractor(config.MODEL)
+        self._extractor = Extractor(device)
         self._integrator = Integrator(config.MODEL)
         self._device = device
 
@@ -30,30 +30,28 @@ class Pipeline(torch.nn.Module):
             :return: The output from fusion model, which contains the estimated shape offset.
         """
 
-        cost_volume = sample['cost_volume'].to(self._device)
-        depth_map = sample['depth_map'].to(self._device)
-
         # Get current feature volume with the corresponding scene ID.
+        device = self._device
         scene_volume = database[sample['scene_id']]
+        current_state = scene_volume['current'].to(device)
 
         # Step 1: Extract the view aligned feature volume from current global state.
-        values = self._extractor.forward(
-            depth_map, 
-            sample['extrinsics'], 
-            sample['intrinsics'], 
-            scene_volume['current'], 
-            scene_volume['origin'], 
-            scene_volume['resolution']
-        )
+        depth_map = sample['depth_map'].to(device)
+        extrinsics = sample['extrinsics'].to(device)
+        intrinsics = sample['intrinsics'].to(device)
+        origin = scene_volume['origin'].to(device)
+        values = self._extractor.forward(depth_map, extrinsics, intrinsics, current_state, origin)
 
         # Step 2: Run the fusion model on a stack of input.
-        fusion_output = self._fusion(cost_volume, values)
+        cost_volume = sample['cost_volume'].to(device)
+        extracted_volume = values['interpolated_volume'].to(device)
+        fusion_output = self._fusion(cost_volume, extracted_volume)
 
         # Step 3: Integrate the estimated volume back into the globle state.
         updated_volume = self._integrator.forward(
             fusion_output.to(self._device), 
             values['indices'].to(self._device), 
-            scene_volume['current'].to(self._device), 
+            current_state, 
         )
         database.scenes_est[sample['scene_id']].volume = updated_volume.cpu().detach().numpy()
 
@@ -61,7 +59,7 @@ class Pipeline(torch.nn.Module):
         output = dict()
         output['est_volume'] = fusion_output['est_volume']
 
-        del updated_volume, values
+        del scene_volume, current_state, depth_map, extrinsics, intrinsics, cost_volume, extracted_volume, values
         return output
 
 
@@ -69,15 +67,8 @@ class Pipeline(torch.nn.Module):
 
         # Prepare input data by stacking extracted feature volume, cost volume, and ray directions.
         # TODO(zgz): Add ray direction in the stack.
-        n_points = self.config.MODEL.n_points
         b, h, w, _ = cost_volume.shape
-        fusion_input = torch.cat(
-            [
-                cost_volume, 
-                extracted_volume.view(b, h, w, n_points)
-            ], 
-            dim=3
-        )
+        fusion_input = torch.cat([cost_volume, extracted_volume], dim=3)
 
         # Run fusion model on the stacked input data.
         fusion_output = self._fusion_network.forward(fusion_input)

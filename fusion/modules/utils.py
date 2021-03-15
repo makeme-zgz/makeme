@@ -35,11 +35,6 @@ def interpolate_indices(points, dist_func):
     # Origin voxel index.
     origin = torch.floor(points)
 
-    # Reshape for pytorch compatibility
-    b, h, n, dim = origin.shape
-    points = points.contiguous().view(b * h * n, dim)
-    origin = origin.contiguous().view(b * h * n, dim)
-
     alpha = torch.abs(points - origin)
     alpha_inv = 1 - alpha
 
@@ -74,7 +69,7 @@ def interpolate_indices(points, dist_func):
                                           iz.unsqueeze_(1)),
                                          dim=1).unsqueeze_(1))
 
-    dists = torch.cat(dists, dim=1) # (b*h*n)-8-1
+    dists = torch.cat(dists, dim=1).unsqueeze_(-1) # (b*h*n)-8-1
     indices = torch.cat(indices, dim=1) # (b*h*n)-8-3
 
     del points, origin, alpha, alpha_inv, ix, iy, iz, dx, dy, dz
@@ -83,7 +78,7 @@ def interpolate_indices(points, dist_func):
 
 
 if __name__ == '__main__':
-    points = torch.FloatTensor([[[[1.2, 1.2, 1.2]]]])
+    points = torch.FloatTensor([[1.2, 1.2, 1.2]])
 
     def dist_func(dx, dy, dz):
         return dx + dy + dz
