@@ -2,7 +2,13 @@ import torch
 
 
 def extract_values(indices, volume, mask=None):
-
+    """
+        Extract values from volume given indices
+        :param indices: positions to extract
+        :param volume: volume to extract from
+        :param mask: optional mask for extraction
+        :return: extracted values
+    """
     if mask is not None:
         x = torch.masked_select(indices[:, 0], mask)
         y = torch.masked_select(indices[:, 1], mask)
@@ -16,7 +22,12 @@ def extract_values(indices, volume, mask=None):
 
 
 def get_index_mask(indices, shape):
-
+    """
+        Get the valid indices based on the given shape.
+        :param indices: indices to check.
+        :param shape: constraints for indices.
+        :return: masked indices.
+    """
     xs, ys, zs = shape
 
     valid = ((indices[:, 0] >= 0) &
