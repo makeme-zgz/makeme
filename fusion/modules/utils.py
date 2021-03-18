@@ -39,6 +39,7 @@ def get_index_mask(indices, shape):
 
     return valid
 
+
 def interpolate_indices(points, dist_func):
 
     assert dist_func is not None

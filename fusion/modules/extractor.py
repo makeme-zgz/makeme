@@ -25,7 +25,6 @@ class Extractor(nn.Module):
         intrinsics, 
         global_volume, 
         volume_origin, 
-        interpolat_mode='nearest',
     ):
         '''
             Computes the forward pass of extracting the rays/blocks and the corresponding coordinates
@@ -50,7 +49,7 @@ class Extractor(nn.Module):
 
         # Step 2: Compute rays from camera center to pixels on depth map.
         eye_w = extrinsics[:, :3, 3]
-        ray_points, ray_direction = self._get_ray_points(
+        ray_points, ray_directions = self._get_ray_points(
             world_coords, 
             eye_w,
             volume_origin, 
@@ -61,16 +60,14 @@ class Extractor(nn.Module):
         interpolated_values, indices = self._interpolate(
             ray_points, 
             volume,
-            mode=interpolat_mode
-        ) # b-(h*w*n)-1, (b*h*w*n)-index_num-3
+        ) # b-(h*w*n)-1, b-(h*w*n)-3
 
         # Step 4: Finalize extraction output.
-        b, h, w = depth_map.shape
-        b_interplt, pts_per_batch, val_dim = interpolated_values.shape
-        _, _, index_num, index_dim = indices.shape
+        _, h, w = depth_map.shape
+        b, pts_per_batch, val_dim = interpolated_values.shape
+        _, _, index_dim = indices.shape
 
         # Verify extraction result dimensions.
-        assert b_interplt == b
         assert pts_per_batch == h * w * self._sample_num
         assert val_dim == 1
         assert index_dim == 3
@@ -78,9 +75,9 @@ class Extractor(nn.Module):
         # Reshape and pack the interpolated values for output.
         values = dict(
             interpolated_volume=interpolated_values.view(b, h, w, self._sample_num), # b-h-w-n
-            indices=indices.view(b, h, w, self._sample_num, index_num, 3), # b-h-w-n-index_num-3
+            indices=indices.view(b, h, w, self._sample_num, 3), # b-h-w-n-3
             ray_points=ray_points.view(b, h, w, self._sample_num, 3), # b-h-w-n-3
-            ray_direction=ray_direction.view(b, h, w, self._sample_num, 3) # b-h-w-n-3
+            ray_directions=ray_directions.view(b, h, w, self._sample_num, 3)[:, :, :, 0, :] # b-h-w-3
         )
 
         del extrinsics, intrinsics, volume_origin, volume, world_coords, eye_w
@@ -125,7 +122,7 @@ class Extractor(nn.Module):
 
         assert n_points >= 1
 
-        _, h, _ = coords.shape
+        _, pts_per_batch, _ = coords.shape
         coords = torch.repeat_interleave(coords, n_points, dim=1) # b-(h*w*n)-3
 
         directions = coords - eye # b-(h*w*n)-3
@@ -142,19 +139,18 @@ class Extractor(nn.Module):
             n_points, 
             dtype=coords.dtype, 
             device=coords.device
-        ).view(1, n_points, 1).repeat((1, h, 1))
+        ).view(1, n_points, 1).repeat((1, pts_per_batch, 1))
         points = start_points + step_size * directions * idx_list # b-(h*w*n)-3
 
         del idx_list, volume_coords, start_points
         return points, directions
 
 
-    def _interpolate(self, points, volume, mode='nearest'):
+    def _interpolate(self, points, volume):
         '''
             Interpolate the values for input points from the given volume.
             :param points: points to be interpolated. Dim: b-(h*w*n)-3
             :param volume: voxel volume to interpolate values from. Dim: x-y-z
-            :param mode: mode of interpolation.
             :return: voxels of the given volume state as well as its coordinates and indices
         '''
 
@@ -184,22 +180,15 @@ class Extractor(nn.Module):
 
         # Interpolate based on the given mode.
         indices = indices.view(pts_num, interplt_num, dim) # (b*(h*w)*n)-8-3
-        fusion_values = None # (b*(h*w)*n)-1
-        if mode == 'nearest':
-            fusion_values, indices = self._nearest_neighbor_interpolate(
-                volume_values, 
-                indices, 
-                dists
-            )
-        elif mode == 'trilinear':
-            fusion_values = torch.sum(volume_values * dists, dim=1)
-        else:
-            raise Exception(f'Interpolation mode is not supported: {mode}')
+        fusion_values, indices = self._nearest_neighbor_interpolate(
+            volume_values, 
+            indices, 
+            dists
+        ) # (b*(h*w)*n)-1, (b*h*w*n)-3
 
         # Note that dimension of the returned indices is depended on the mode of interpolation.
-        _, index_num, dim = indices.shape
         fusion_values = fusion_values.view(batch, pts_per_batch, 1)
-        indices = indices.view(batch, pts_per_batch, index_num, dim)
+        indices = indices.view(batch, pts_per_batch, dim)
 
         del points, dists, valid_values, volume_values
         return fusion_values, indices
@@ -216,7 +205,7 @@ class Extractor(nn.Module):
         indices = indices[torch.arange(pts_num), min_value_indices, :]
 
         # Reshape and return interpolated values.
-        indices = indices.view(pts_num, 1, dim) # (b*h*w*n)-1-3
+        indices = indices.view(pts_num, dim) # (b*h*w*n)-3
 
         del min_value_indices
         return fusion_values, indices
@@ -248,3 +237,13 @@ if __name__ == '__main__':
 
     result = 2.0 + 3.0 + 4.0 + 5.0 * 2 + 6.0
     assert torch.sum(values['interpolated_volume']) == result
+
+    interpolated_volume = values['interpolated_volume']
+    indices = values['indices']
+    ray_pts = values['ray_points']
+    ray_directions = values['ray_directions']
+
+    assert interpolated_volume.shape == (1, 1, 2, 3)
+    assert indices.shape == (1, 1, 2, 3, 3)
+    assert ray_pts.shape == (1, 1, 2, 3, 3)
+    assert ray_directions.shape == (1, 1, 2, 3)
